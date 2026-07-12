@@ -2,6 +2,8 @@
 import os
 import subprocess
 import sys
+import json
+import urllib.request
 
 # --- ANSI Color Code for Cyan ---
 C = "\033[96m"
@@ -21,7 +23,7 @@ cyan_print("██   ██ ██████    ████   █████
 cyan_print("██   ██ ██   ██    ██    ██   ██ ██    ██    ██   ")
 cyan_print("██████  ██████     ██    ██████   ██████     ██   ")
 cyan_print("="*50)
-cyan_print("\n>>> Subscribe to CodingBoyz <<<\n")
+cyan_print("\n>>> v1 Subscribe to CodingBoyz <<<\n")
 
 # --- User Inputs ---
 ram = cyan_input("Enter Server RAM (e.g., 2G, 4G, 8G): ")
@@ -52,42 +54,88 @@ os.chdir(server_name)
 # Get absolute path for the screen session to work correctly
 abs_path = os.getcwd()
 
-# 1. Install dependencies (Java 17 and Screen)
+# 1. Generate eula.txt and server.properties IMMEDIATELY so they are always created
+cyan_print("[INFO] Generating eula.txt and server.properties...")
+with open("eula.txt", "w") as f:
+    f.write("eula=true\n")
+
+with open("server.properties", "w") as f:
+    f.write("# CodingBoyz Minecraft Server Properties\n")
+    f.write("server-port=25565\n")
+    f.write("max-players=20\n")
+    f.write("level-seed=CodingBoyz\n")
+    f.write("motd=Subscribe to CodingBoyz\n")
+    f.write("enable-command-block=true\n")
+
+# 2. Install dependencies (Java 17 and Screen)
 cyan_print("[INFO] Installing Java 17 and Screen (requires sudo)...")
 subprocess.run("sudo apt update -y > /dev/null 2>&1", shell=True)
 subprocess.run("sudo apt install openjdk-17-jre-headless screen wget -y > /dev/null 2>&1", shell=True)
 
-# 2. Download selected server JAR
-cyan_print(f"[INFO] Downloading {server_type} server files (Version {mc_version})...")
+# 3. Download selected server JAR (Using APIs to prevent broken links)
+cyan_print(f"[INFO] Fetching download links for version {mc_version}...")
 jar_name = "server.jar"
-download_success = False
+download_url = ""
 
-if server_type == "1": # PaperMC
-    cmd = f"wget -q -O {jar_name} https://api.papermc.io/v2/projects/paper/versions/{mc_version}/builds/497/downloads/paper-{mc_version}-497.jar"
-    if subprocess.run(cmd, shell=True).returncode == 0: download_success = True
-elif server_type == "2": # Vanilla
-    cmd = f"wget -q -O {jar_name} https://piston-data.mojang.com/v1/objects/84194a2f286ef7c14ed7ce0090dba599029e714/server.jar"
-    if subprocess.run(cmd, shell=True).returncode == 0: download_success = True
-elif server_type == "3": # Spigot
-    cmd = f"wget -q -O {jar_name} https://download.getbukkit.org/spigot/spigot-{mc_version}.jar"
-    if subprocess.run(cmd, shell=True).returncode == 0: download_success = True
-else:
-    cyan_print("[WARNING] Invalid choice. Defaulting to Vanilla.")
-    cmd = f"wget -q -O {jar_name} https://piston-data.mojang.com/v1/objects/84194a2f286ef7c14ed7ce0090dba599029e714/server.jar"
-    if subprocess.run(cmd, shell=True).returncode == 0: download_success = True
+try:
+    if server_type == "1": # PaperMC
+        api_url = f"https://api.papermc.io/v2/projects/paper/versions/{mc_version}"
+        cyan_print("[INFO] Contacting PaperMC API...")
+        with urllib.request.urlopen(api_url) as response:
+            data = json.loads(response.read().decode())
+            latest_build = data['builds'][-1]
+            download_url = f"https://api.papermc.io/v2/projects/paper/versions/{mc_version}/builds/{latest_build}/downloads/paper-{mc_version}-{latest_build}.jar"
+            
+    elif server_type == "2": # Vanilla
+        cyan_print("[INFO] Contacting Mojang API...")
+        api_url = f"https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
+        with urllib.request.urlopen(api_url) as response:
+            data = json.loads(response.read().decode())
+            for v in data['versions']:
+                if v['id'] == mc_version:
+                    with urllib.request.urlopen(v['url']) as ver_response:
+                        ver_data = json.loads(ver_response.read().decode())
+                        download_url = ver_data['downloads']['server']['url']
+                    break
+            if not download_url:
+                raise Exception("Version not found on Mojang servers.")
+                
+    elif server_type == "3": # Spigot
+        cyan_print("[INFO] Using Spigot GETBUKKIT mirror...")
+        download_url = f"https://download.getbukkit.org/spigot/spigot-{mc_version}.jar"
+        
+    else:
+        cyan_print("[WARNING] Invalid choice. Defaulting to Vanilla.")
+        api_url = f"https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
+        with urllib.request.urlopen(api_url) as response:
+            data = json.loads(response.read().decode())
+            for v in data['versions']:
+                if v['id'] == mc_version:
+                    with urllib.request.urlopen(v['url']) as ver_response:
+                        ver_data = json.loads(ver_response.read().decode())
+                        download_url = ver_data['downloads']['server']['url']
+                    break
 
-if not download_success:
-    cyan_print("[ERROR] Failed to download server JAR. Check your internet connection or version validity.")
+except Exception as e:
+    cyan_print(f"[ERROR] Failed to fetch download link: {e}")
+    cyan_print("[ERROR] Please check your internet connection or verify the Minecraft version exists.")
     sys.exit(1)
 
-# 3. Accept EULA
-cyan_print("[INFO] Accepting Mojang EULA...")
-with open("eula.txt", "w") as f:
-    f.write("eula=true\n")
+# Perform the actual download
+cyan_print(f"[INFO] Downloading server jar file... (This may take a minute)")
+download_result = subprocess.run(f"wget -q --show-progress -O {jar_name} '{download_url}'", shell=True)
+
+if download_result.returncode != 0:
+    cyan_print("[ERROR] Download failed! Wget returned an error code.")
+    sys.exit(1)
+
+# Verify the file actually downloaded and isn't an HTML error page
+if os.path.getsize(jar_name) < 10000: # JARs are usually 10MB+, if it's less than 10KB it's an error page
+    cyan_print("[ERROR] Downloaded file is too small. The download link might be broken.")
+    sys.exit(1)
 
 # 4. Create start script with RAM allocation
 cyan_print(f"[INFO] Configuring startup script with {ram} RAM...")
-# We use 'cd' inside the bash script so 'screen' knows exactly where the files are
 start_script = f"""#!/bin/bash
 cd {abs_path}
 java -Xmx{ram} -Xms{ram} -jar {jar_name} nogui
@@ -98,13 +146,10 @@ os.chmod("start.sh", 0o755)
 
 # 5. Display CPU/Disk info
 cyan_print(f"[INFO] Allocated CPU Cores: {cpu} | Disk Limit: {disk}GB")
-cyan_print("[INFO] Note: CPU and Disk limits are enforced by your VPS provider hardware.")
 
 # 6. Start the server in a Screen session
 cyan_print(f"\n[INFO] Starting server in background screen session named '{server_name}'...")
-# Kill existing screen with same name just in case
 subprocess.run(f"screen -S {server_name} -X quit > /dev/null 2>&1", shell=True)
-# Start new screen session
 subprocess.run(f"screen -dmS {server_name} bash start.sh", shell=True)
 
 # --- Final Output ---
