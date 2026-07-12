@@ -12,12 +12,12 @@ A quick, interactive Python script to automatically set up a Minecraft Server (P
 
 1. Clone this repository to your VPS:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
+   git clone https://github.com/1CodingBoy1/McServer.git
    ```
 
 2. Navigate into the cloned folder:
    ```bash
-   cd YOUR_REPO_NAME
+   cd McServer
    ```
 
 3. Run the script:
