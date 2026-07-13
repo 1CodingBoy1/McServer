@@ -36,21 +36,18 @@ cyan_print("2. Vanilla (Official default)")
 cyan_print("3. Spigot (Legacy plugin support)")
 server_type = cyan_input("Enter number (1-3): ")
 
-# --- NEW: Version Selection ---
+# --- Version Selection ---
 mc_version = cyan_input("\nEnter Minecraft Version to install (e.g., 1.20.4, 1.19.2): ")
 
-# Fallback to 1.20.4 if user just presses enter
 if not mc_version.strip():
     mc_version = "1.20.4"
     cyan_print(f"[INFO] No version entered, defaulting to {mc_version}")
 
 server_name = cyan_input("\nEnter Server Name (This will be your folder name): ")
 
-# Fallback to server1 if empty
 if not server_name.strip():
     server_name = "server1"
 
-# Remove spaces from folder name to prevent bash errors
 server_name = server_name.replace(" ", "_")
 
 # --- Installation Process ---
@@ -58,7 +55,6 @@ cyan_print(f"\n[INFO] Starting installation for '{server_name}'...")
 os.makedirs(server_name, exist_ok=True)
 os.chdir(server_name)
 
-# Get absolute path for the screen session to work correctly
 abs_path = os.getcwd()
 
 # 1. Generate eula.txt and server.properties IMMEDIATELY
@@ -75,23 +71,22 @@ with open("server.properties", "w") as f:
     f.write("enable-command-block=true\n")
 
 # 2. Install dependencies (Java 17 and Screen)
-cyan_print("[INFO] Installing Java 17 and Screen (requires sudo)...")
+cyan_print("[INFO] Installing Java 17, Screen, and Curl (requires sudo)...")
 subprocess.run("sudo apt update -y > /dev/null 2>&1", shell=True)
 subprocess.run("sudo apt install openjdk-17-jre-headless screen wget curl -y > /dev/null 2>&1", shell=True)
 
 # 3. Download selected server JAR
 cyan_print(f"[INFO] Preparing to download version {mc_version}...")
-jar_name = "server.jar" # Default name
+jar_name = "server.jar" 
 download_success = False
 
 try:
-    if server_type == "1": # PaperMC (Using your requested curl method)
+    if server_type == "1": # PaperMC
         cyan_print(f"[INFO] Downloading PaperMC {mc_version} via curl...")
-        # Using the official PaperMC API endpoint so it downloads the actual JAR file
         paper_url = f"https://api.papermc.io/v2/projects/paper/versions/{mc_version}/builds/latest/downloads/paper-{mc_version}-latest.jar"
         cmd = f'curl -H "User-Agent: MyMinecraftServer/1.0 (contact@example.com)" -fL "{paper_url}" -o paper.jar'
         if subprocess.run(cmd, shell=True).returncode == 0: 
-            jar_name = "paper.jar" # Update jar name to match what we just downloaded
+            jar_name = "paper.jar" 
             download_success = True
             
     elif server_type == "2": # Vanilla
@@ -138,13 +133,11 @@ except Exception as e:
     cyan_print(f"[ERROR] Failed to fetch download link: {e}")
     sys.exit(1)
 
-# Verify download actually worked and isn't a tiny error page
 if not download_success or not os.path.exists(jar_name) or os.path.getsize(jar_name) < 10000:
     cyan_print(f"[ERROR] Download failed! The file {jar_name} is missing or too small.")
-    cyan_print("[ERROR] Double-check that the version you typed exists for that server type.")
     sys.exit(1)
 
-# 4. Create start script with RAM allocation (Dynamically uses paper.jar or server.jar)
+# 4. Create start script
 cyan_print(f"[INFO] Configuring startup script with {ram} RAM...")
 start_script = f"""#!/bin/bash
 cd {abs_path}
@@ -153,6 +146,14 @@ java -Xmx{ram} -Xms{ram} -jar {jar_name} nogui
 with open("start.sh", "w") as f:
     f.write(start_script)
 os.chmod("start.sh", 0o755)
+
+# =====================================================================
+# --- NEW: PERMISSION BYPASS FIX FOR DOCKER / ACCESS DENIED ERRORS ---
+# =====================================================================
+cyan_print("[INFO] Bypassing permissions (chmod 777) to prevent AccessDeniedException...")
+# This gives full read/write/execute permissions to bypass Docker volume mapping locks
+subprocess.run(f"chmod -R 777 {abs_path}", shell=True)
+# =====================================================================
 
 # 5. Display CPU/Disk info
 cyan_print(f"[INFO] Allocated CPU Cores: {cpu} | Disk Limit: {disk}GB")
